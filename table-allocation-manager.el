@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2023  Onnie Lynn Winebarger
 
-;; Author: Onnie Lynn Winebarger <owinebar@>
+;; Author: Onnie Lynn Winebarger <owinebar@gmail.com>
 ;; Keywords: lisp, tools
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,8 @@
 
 (eval-when-compile
   (require 'cl-lib))
+
+(require 'queue)
 
 (cl-defstruct (tam--table (:constructor tam--table-create (size))
 			  (:copier tam--copy-table))
@@ -93,8 +95,9 @@
   "Get slot IDX of TBL"
   (tam--slot-contents (aref (tam--table-slots tbl) idx)))
 
-(defun tam-store (tbl obj)
-  "Store OBJ in TBL.  Returns index or nil if table is full."
+(defun tam-allocate (tbl obj)
+  "Allocate slot in TBL with contents OBJ.
+Returns index or nil if table is full."
   (let ((slot (tam--table-first-free tbl))
 	idx)
     (when (not (tam-table-full tbl))
@@ -142,6 +145,24 @@ Signals an error if IDX is not in use."
     (setf (tam--slot-in-use slot) nil)
     (setf (tam--slot-contents slot) nil)
     obj))
+
+(defun tam-table-free-list (tbl)
+  "Return list of free indices in TBL"
+  (let ((s (tam--table-first-free tbl))
+	(q (queue-create)))
+    (while s
+      (queue-enqueue q (tam--slot-index s))
+      (setq s (tam--slot-next s)))
+    (queue-all q)))
+
+(defun tam-table-live-list (tbl)
+  "Return list of live indices in TBL"
+  (let ((s (tam--table-first-used tbl))
+	(q (queue-create)))
+    (while s
+      (queue-enqueue q (tam--slot-index s))
+      (setq s (tam--slot-next s)))
+    (queue-all q)))
 
 
 (provide 'table-allocation-manager)
