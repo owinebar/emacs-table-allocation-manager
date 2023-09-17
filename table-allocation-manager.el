@@ -59,24 +59,26 @@
   "Make a tam table of size N."
   (let ((tbl (tam--table-create N))
 	(v (make-vector N nil))
-	(next (if (> N 1)
-		  1
-		nil))
+	(N-1 (- N 1))
+	next
 	prev)
     (setf (tam--table-slots tbl) v)
     (setf (tam--table-used tbl) 0)
-    (setf (tam--table-first-free tbl) 0)
-    (setf (tam--table-last-free tbl) (- N 1))
     (setf (tam--table-first-used tbl) nil)
     (setf (tam--table-last-used tbl) nil)
     (dotimes (k N)
-      (let ((s (tam--slot-create tbl k nil next prev)))
+      (let ((s (tam--slot-create tbl k nil nil prev)))
 	(aset v k s)
-	(setq prev k)
-	(setq next
-	      (if (< next N)
-		  (1+ next)
-		nil))))))
+	(setq prev s)))
+    (when (> N 1)
+      (setq next (aref v 1))
+      (dotimes (k N-1)
+	(setq next (aref v (1+ k)))
+	(setf (tam--slot-next (aref v k)) next)))
+    (setf (tam--table-first-free tbl) (aref v 0))
+    (setf (tam--table-last-free tbl) (aref v N-1))
+    tbl))
+
 
 
 (defun tam-table-full (tbl)
@@ -98,34 +100,41 @@
 (defun tam-allocate (tbl obj)
   "Allocate slot in TBL with contents OBJ.
 Returns index or nil if table is full."
-  (let ((slot (tam--table-first-free tbl))
-	idx)
+  (let ((s (tam--table-first-free tbl))
+	next idx)
     (when (not (tam-table-full tbl))
+      (setf (tam--slot-previous s) (tam--table-last-used tbl))
       (if (tam-table-empty tbl)
-	  (setf (tam--table-first-used tbl) slot)
-	(setf (tam--slot-next (tam--table-last-used tbl)) slot))
-      (setf (tam--table-last-used tbl) slot)
-      (setf (tam--table-first-free tbl) (tam--slot-next slot))
-      (setf (tam--slot-next slot) nil)
-      (setf (tam--slot-in-use slot) t)
-      (setf (tam--slot-contents slot) obj)
-      (setq idx (tam--slot-index slot)))
+	  (setf (tam--table-first-used tbl) s)
+	(setf (tam--slot-next (tam--table-last-used tbl)) s))
+      (setf (tam--table-last-used tbl) s)
+      (setq next (tam--slot-next s))
+      (setf (tam--table-first-free tbl) next)
+      (setf (tam--slot-next s) nil)
+      (setf (tam--slot-in-use s) t)
+      (setf (tam--slot-contents s) obj)
+      (cl-incf (tam--table-used tbl))
+      (when next
+	(setf (tam--slot-previous next) nil))
+      (when (tam-table-full tbl)
+	(setf (tam--table-last-free tbl) nil))
+      (setq idx (tam--slot-index s)))
     idx))
 
 (defun tam-free (tbl idx)
   "Free slot at IDX in TBL.  Returns contents of slot IDX.
 Signals an error if IDX is not in use."
-  (let ((slot (tam--table-get-slot tbl idx))
+  (let ((s (tam--table-get-slot tbl idx))
 	(last-free (tam--table-last-free tbl))
 	prev next obj)
-    (unless (tam--slot-in-use slot)
+    (unless (tam--slot-in-use s)
       (signal 'tam-already-free
 	      (format "Attempt to free unused table entry %s"
 		      idx)))
-    (setq prev (tam--slot-previous slot))
-    (setq next (tam--slot-next slot))
-    (setq obj (tam--slot-contents slot))
-    (setf (tam--slot-next slot) nil)
+    (setq prev (tam--slot-previous s))
+    (setq next (tam--slot-next s))
+    (setq obj (tam--slot-contents s))
+    (setf (tam--slot-next s) nil)
     (if prev
 	(setf (tam--slot-next prev) next)
       ;; else was first used
@@ -136,14 +145,15 @@ Signals an error if IDX is not in use."
       (setf (tam--table-last-used tbl) prev))
     (if last-free
 	(progn
-	  (setf (tam--slot-next last-free) slot)
-	  (setf (tam--slot-previous slot) last-free))
+	  (setf (tam--slot-next last-free) s)
+	  (setf (tam--slot-previous s) last-free))
       ;; free list is empty
-      (setf (tam--table-first-free tbl) slot)
-      (setf (tam--slot-previous slot) nil))
-    (setf (tam--table-last-free tbl) slot)
-    (setf (tam--slot-in-use slot) nil)
-    (setf (tam--slot-contents slot) nil)
+      (setf (tam--table-first-free tbl) s)
+      (setf (tam--slot-previous s) nil))
+    (setf (tam--table-last-free tbl) s)
+    (setf (tam--slot-in-use s) nil)
+    (setf (tam--slot-contents s) nil)
+    (cl-decf (tam--table-used tbl))
     obj))
 
 (defun tam-table-free-list (tbl)
