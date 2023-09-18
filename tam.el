@@ -1,25 +1,33 @@
-;;; table-allocation-manager.el --- Manage use of slots in a fixed size table  -*- lexical-binding: t; -*-
+;;; tam.el --- Manage use of slots in a fixed size table  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  Onnie Lynn Winebarger
+;; Copyright (C) 2023  Free Software Foundation, Inc.
 
 ;; Author: Onnie Lynn Winebarger <owinebar@gmail.com>
 ;; Keywords: lisp, tools
+;; Maintainer: Onnie Lynn Winebarger <owinebar@gmail.com>
+;; Version: 0.1
+;; URL: https://github.com/owinebar/emacs-table-allocation-manager
+;; Package-Requires: ((queue "0.2") (emacs "24.3"))
+;; Readme: Readme.md
 
-;; This program is free software; you can redistribute it and/or modify
+;; This file is part of GNU Emacs.
+
+;; GNU Emacs is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
 
-;; This program is distributed in the hope that it will be useful,
+;; GNU Emacs is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
+;; Table Allocation Manager
 ;; Provides an interface to managing the usage of the slots in a fixed size
 ;; table.  All allocation is done during initialization to avoid triggering
 ;; garbage collection during allocation/free operations.
@@ -118,12 +126,12 @@
   (tam--table-used tbl))
 
 (defun tam--table-get-slot (tbl idx)
-  "Get slot IDX of TBL"
+  "Get slot IDX of TBL."
   (aref (tam--table-slots tbl) idx))
 
 
 (defun tam-table-get (tbl idx)
-  "Get contents of slot IDX of TBL"
+  "Get contents of slot IDX of TBL."
   (tam--slot-contents (aref (tam--table-slots tbl) idx)))
 
 (defun tam-allocate (tbl obj)
@@ -151,7 +159,7 @@ Returns index or nil if table is full."
     idx))
 
 (defun tam-free (tbl idx)
-  "Free slot at IDX in TBL.  Returns contents of slot IDX.
+  "Free slot at IDX in TBL.  Return contents of slot IDX.
 Signals an error if IDX is not in use."
   (let ((s (tam--table-get-slot tbl idx))
 	(last-free (tam--table-last-free tbl))
@@ -186,7 +194,7 @@ Signals an error if IDX is not in use."
     obj))
 
 (defun tam-table-free-list (tbl)
-  "Return list of free indices in TBL"
+  "Return list of free indices in TBL."
   (let ((s (tam--table-first-free tbl))
 	(q (queue-create)))
     (while s
@@ -195,7 +203,7 @@ Signals an error if IDX is not in use."
     (queue-all q)))
 
 (defun tam-table-live-list (tbl)
-  "Return list of live indices in TBL"
+  "Return list of live indices in TBL."
   (let ((s (tam--table-first-used tbl))
 	(q (queue-create)))
     (while s
@@ -204,5 +212,5 @@ Signals an error if IDX is not in use."
     (queue-all q)))
 
 
-(provide 'table-allocation-manager)
-;;; table-allocation-manager.el ends here
+(provide 'tam)
+;;; tam.el ends here
