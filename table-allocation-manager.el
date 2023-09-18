@@ -24,6 +24,25 @@
 ;; table.  All allocation is done during initialization to avoid triggering
 ;; garbage collection during allocation/free operations.
 
+;;  API:
+;;
+;;  (tam-create-table N) => table of size N
+;;  (tam-table-fullp TABLE) => nil unless TABLE is full
+;;  (tam-table-emptyp TABLE) => nil unless TABLE is empty
+;;  (tam-table-size TABLE) => number of slots in TABLE
+;;  (tam-table-used TABLE) => number of slots of TABLE in use
+;;  (tam-table-get TABLE IDX) => contents of TABLE slot at index IDX
+;;  (tam-table-allocate TABLE OBJ) =>
+;;      if not full, assigns OBJ to contents of a free slot in TABLE,
+;;                   and returns the index of the slot
+;;      if full, returns nil
+;;  (tam-table-free TABLE INDEX) =>
+;;      if slot at INDEX of TABLE is in use, move to the free list and
+;;              return the object formerly held by the slot
+;;      if slot is already free, signal an error
+;;  (tam-table-free-list TABLE) => list of free indices in TABLE
+;;  (tam-table-live-list TABLE) => list of in-use indices in TABLE
+
 
 ;;; Code:
 
@@ -81,17 +100,24 @@
 
 
 
-(defun tam-table-full (tbl)
+(defun tam-table-fullp (tbl)
   "Test if TBL is full."
   (<= (tam--table-size tbl) (tam--table-used tbl)))
 
-(defun tam-table-empty (tbl)
-  "Test if TBL is full."
+(defun tam-table-emptyp (tbl)
+  "Test if TBL is empty."
   (= (tam--table-used tbl) 0))
+
+(defalias tam-table-size tam--table-size
+  "Number of table slots.")
+
+(defalias tam-table-used tam--table-size
+  "Number of slots of table in use.")
 
 (defun tam--table-get-slot (tbl idx)
   "Get slot IDX of TBL"
   (aref (tam--table-slots tbl) idx))
+
 
 (defun tam-table-get (tbl idx)
   "Get slot IDX of TBL"
@@ -102,9 +128,9 @@
 Returns index or nil if table is full."
   (let ((s (tam--table-first-free tbl))
 	next idx)
-    (when (not (tam-table-full tbl))
+    (when (not (tam-table-fullp tbl))
       (setf (tam--slot-previous s) (tam--table-last-used tbl))
-      (if (tam-table-empty tbl)
+      (if (tam-table-emptyp tbl)
 	  (setf (tam--table-first-used tbl) s)
 	(setf (tam--slot-next (tam--table-last-used tbl)) s))
       (setf (tam--table-last-used tbl) s)
@@ -116,7 +142,7 @@ Returns index or nil if table is full."
       (cl-incf (tam--table-used tbl))
       (when next
 	(setf (tam--slot-previous next) nil))
-      (when (tam-table-full tbl)
+      (when (tam-table-fullp tbl)
 	(setf (tam--table-last-free tbl) nil))
       (setq idx (tam--slot-index s)))
     idx))
