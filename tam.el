@@ -7,7 +7,7 @@
 ;; Maintainer: Onnie Lynn Winebarger <owinebar@gmail.com>
 ;; Version: 0.1
 ;; URL: https://github.com/owinebar/emacs-table-allocation-manager
-;; Package-Requires: ((queue "0.2") (emacs "24.3"))
+;; Package-Requires: ((emacs "24.4"))
 ;; Readme: Readme.md
 
 ;; This file is part of GNU Emacs.
@@ -56,8 +56,6 @@
 
 (eval-when-compile
   (require 'cl-lib))
-
-(require 'queue)
 
 (cl-defstruct (tam--table (:constructor tam--table-create (size))
 			  (:copier tam--copy-table))
@@ -116,14 +114,8 @@
   "Test if TBL is empty."
   (= (tam--table-used tbl) 0))
 
-(defsubst tam-table-size (tbl)
-  "Number of slots in TBL."
-  (tam--table-size tbl))
-
-
-(defsubst tam-table-used (tbl)
-  "Number of slots of TBL in use."
-  (tam--table-used tbl))
+(defalias 'tam-table-size #'tam--table-size)
+(defalias 'tam-table-used #'tam--table-used)
 
 (defun tam--table-get-slot (tbl idx)
   "Get slot IDX of TBL."
@@ -136,7 +128,7 @@
 
 (defun tam-allocate (tbl obj)
   "Allocate slot in TBL with contents OBJ.
-Returns index or nil if table is full."
+Return index or nil if table is full."
   (let ((s (tam--table-first-free tbl))
 	next idx)
     (when (not (tam-table-fullp tbl))
@@ -159,8 +151,8 @@ Returns index or nil if table is full."
     idx))
 
 (defun tam-free (tbl idx)
-  "Free slot at IDX in TBL.  Return contents of slot IDX.
-Signals an error if IDX is not in use."
+  "Free slot at IDX in TBL.
+Return contents of slot IDX.  Signals an error if IDX is not in use."
   (let ((s (tam--table-get-slot tbl idx))
 	(last-free (tam--table-last-free tbl))
 	prev next obj)
@@ -195,21 +187,15 @@ Signals an error if IDX is not in use."
 
 (defun tam-table-free-list (tbl)
   "Return list of free indices in TBL."
-  (let ((s (tam--table-first-free tbl))
-	(q (queue-create)))
-    (while s
-      (queue-enqueue q (tam--slot-index s))
-      (setq s (tam--slot-next s)))
-    (queue-all q)))
+  (cl-loop for s = (tam--table-first-free tbl) then (tam--slot-next s)
+	   while s
+	   collect (tam--slot-index s)))
 
 (defun tam-table-live-list (tbl)
   "Return list of live indices in TBL."
-  (let ((s (tam--table-first-used tbl))
-	(q (queue-create)))
-    (while s
-      (queue-enqueue q (tam--slot-index s))
-      (setq s (tam--slot-next s)))
-    (queue-all q)))
+  (cl-loop for s = (tam--table-first-used tbl) then (tam--slot-next s)
+	   while s
+	   collect (tam--slot-index s)))
 
 
 (provide 'tam)
