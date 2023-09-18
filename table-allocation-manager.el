@@ -32,11 +32,11 @@
 ;;  (tam-table-size TABLE) => number of slots in TABLE
 ;;  (tam-table-used TABLE) => number of slots of TABLE in use
 ;;  (tam-table-get TABLE IDX) => contents of TABLE slot at index IDX
-;;  (tam-table-allocate TABLE OBJ) =>
+;;  (tam-allocate TABLE OBJ) =>
 ;;      if not full, assigns OBJ to contents of a free slot in TABLE,
 ;;                   and returns the index of the slot
 ;;      if full, returns nil
-;;  (tam-table-free TABLE INDEX) =>
+;;  (tam-free TABLE INDEX) =>
 ;;      if slot at INDEX of TABLE is in use, move to the free list and
 ;;              return the object formerly held by the slot
 ;;      if slot is already free, signal an error
@@ -108,11 +108,14 @@
   "Test if TBL is empty."
   (= (tam--table-used tbl) 0))
 
-(defalias tam-table-size tam--table-size
-  "Number of table slots.")
+(defsubst tam-table-size (tbl)
+  "Number of slots in TBL."
+  (tam--table-size tbl))
 
-(defalias tam-table-used tam--table-size
-  "Number of slots of table in use.")
+
+(defsubst tam-table-used (tbl)
+  "Number of slots of TBL in use."
+  (tam--table-used tbl))
 
 (defun tam--table-get-slot (tbl idx)
   "Get slot IDX of TBL"
@@ -120,7 +123,7 @@
 
 
 (defun tam-table-get (tbl idx)
-  "Get slot IDX of TBL"
+  "Get contents of slot IDX of TBL"
   (tam--slot-contents (aref (tam--table-slots tbl) idx)))
 
 (defun tam-allocate (tbl obj)
