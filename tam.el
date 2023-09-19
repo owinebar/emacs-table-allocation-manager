@@ -60,24 +60,24 @@
 (cl-defstruct (tam--table (:constructor tam--table-create (size))
 			  (:copier tam--copy-table))
   "Table with explicitly managed allocation"
-  size
-  used
-  slots
-  first-free
-  last-free
-  first-used
-  last-used)
+  (size nil :documentation "Size of the table")
+  (used nil :documentation "Number of entries in use")
+  (slots nil :documentation "Vector of slots")
+  (first-free nil :documentation "First slot on the free list")
+  (last-free nil :documentation "Last slot on the free list")
+  (first-used nil :documentation "First slot on in-use list")
+  (last-used nil :documentation "Last slot on in-use list"))
 
 (cl-defstruct (tam--slot (:constructor tam--slot-create
 				       (table index in-use next previous))
 			(:copier tam--copy-slot))
   "Slot in TAM table"
-  table  ;; table containing this slot
-  index  ;; index of slot in table
-  in-use ;; flag indicating if contents are "live"
-  next   ;; next on list of used/free
-  previous ;; previous on list of used/free
-  contents ;; contents of slot
+  (table nil  :documentation "table containing this slot")
+  (index nil :documentation "index of slot in table")
+  (in-use nil :documentation "flag indicating if contents are \"live\"")
+  (next nil  :documentation "next on list of used/free")
+  (previous nil :documentation "previous on list of used/free")
+  (contents nil :documentation "contents of slot")
   )
 
 (cl-defstruct (tam--pool (:constructor tam--pool-create
@@ -87,10 +87,10 @@
 					reset))
 			 (:copier tam--copy-pool))
   "Pool of manually managed pre-allocated objects"
-  table
-  objs
-  allocate
-  reset)
+  (table nil :documentation "TAM table for tracking live/free objects")
+  (objs nil :documentation "Preallocated objects")
+  (allocate nil :documentation "Thunk for allocating uninitialized objects")
+  (reset nil :documentation "Function to reset object to uninitialized state"))
 
 
 (defun tam-create-table (N)
