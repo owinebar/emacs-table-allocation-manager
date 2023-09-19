@@ -80,6 +80,19 @@
   contents ;; contents of slot
   )
 
+(cl-defstruct (tam--pool (:constructor tam--pool-create
+				       (table
+					objs
+					allocate
+					reset))
+			 (:copier tam--copy-pool))
+  "Pool of manually managed pre-allocated objects"
+  table
+  objs
+  allocate
+  reset)
+
+
 (defun tam-create-table (N)
   "Make a tam table of size N."
   (let ((tbl (tam--table-create N))
@@ -121,10 +134,10 @@
   "Get slot IDX of TBL."
   (aref (tam--table-slots tbl) idx))
 
-
 (defun tam-table-get (tbl idx)
   "Get contents of slot IDX of TBL."
   (tam--slot-contents (aref (tam--table-slots tbl) idx)))
+
 
 (defun tam-allocate (tbl obj)
   "Allocate slot in TBL with contents OBJ.
@@ -196,6 +209,41 @@ Return contents of slot IDX.  Signals an error if IDX is not in use."
   (cl-loop for s = (tam--table-first-used tbl) then (tam--slot-next s)
 	   while s
 	   collect (tam--slot-index s)))
+
+
+(defun tam-create-pool (N allocate &optional reset)
+  "Make a pool of N pre-allocated objects.
+Arguments:
+  N - number of pre-allocated objects
+  ALLOCATE - function of zero arguments returning an uninitialized object
+  RESET - function taking an object and setting it to an uninitialized state
+          Perform any required finalization."
+  (let ((tbl (tam-create-table N))
+	(v (make-vector N nil)))
+    (dotimes (k N)
+      (aset v k (funcall allocate)))
+    (tam--pool-create tbl v allocate reset)))
+
+(defun tam-pool-get (pool idx)
+  "Get contents of slot IDX of POOL."
+  (aref (tam--pool-objs pool) idx))
+
+(defun tam-pool-claim (pool)
+  "Return a free object from POOL if available, nil otherwise."
+  (let ((idx (tam-allocate (tam--pool-table pool) nil))
+	obj)
+    (when idx
+      (setq obj (aref (tam--pool-objs pool) idx)))
+    obj))
+
+(defun tam-pool-free (pool idx)
+  "Free object IDX of POOL."
+  (let ((obj (aref (tam--pool-objs pool) idx))
+	(reset (tam--pool-reset pool)))
+    (tam-free (tam--pool-table pool) idx)
+    (when reset
+      (funcall reset obj))
+    nil))
 
 
 (provide 'tam)
