@@ -217,7 +217,7 @@ Arguments:
   N - number of pre-allocated objects
   ALLOCATE - function of zero arguments returning an uninitialized object
   RESET - function taking an object and setting it to an uninitialized state
-          Perform any required finalization."
+RESET must perform any required finalization."
   (let ((tbl (tam-create-table N))
 	(v (make-vector N nil)))
     (dotimes (k N)
