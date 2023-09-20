@@ -431,17 +431,28 @@ Moves object to live list."
   (tam-claim/inline pool))
 
 (defsubst tam-release/inline (pool idx)
-  "Release object at index IDX of POOL."
+  "Release object at index IDX of POOL.
+User is responsible for any required finalization.
+Inline version"
+  (tam--free-slot pool (tam-pool-get pool idx))
+  nil)
+
+(defsubst tam-release-finalize/inline (pool idx)
+  "Release object at index IDX of POOL and invoke specified finalizer."
   (let ((s (tam-pool-get pool idx))
 	(reset (tam--pool-reset pool)))
     (tam--free-slot pool s)
-    (when reset
-      (funcall reset (tam--slot-contents s)))
+    (funcall reset (tam--slot-contents s))
     nil))
 
 (defun tam-release (pool idx)
-  "Release object at index IDX of POOL."
+  "Release object at index IDX of POOL.
+User is responsible for any required finalization."
   (tam-release/inline pool idx))
+
+(defun tam-release-finalize (pool idx)
+  "Release object at index IDX of POOL and invoke specified finalizer."
+  (tam-release-finalize/inline pool idx))
 
 (provide 'tam)
 ;;; tam.el ends here
