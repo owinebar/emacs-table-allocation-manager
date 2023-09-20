@@ -55,6 +55,8 @@
 ;;; Code:
 
 
+
+(define-error 'tam-already-free "Attempt to free resource that is already free" 'tam-error)
 (defun tam--slot-create (table index in-use next previous &optional contents)
   "Make a tam--slot record.
 Fields:
