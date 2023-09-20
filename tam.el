@@ -54,162 +54,207 @@
 
 ;;; Code:
 
-(eval-when-compile
-  (require 'cl-lib))
 
-(cl-defstruct (tam--table (:constructor tam--table-create (size))
-			  (:copier tam--copy-table))
-  "Table with explicitly managed allocation"
-  (size nil :documentation "Size of the table")
-  (used nil :documentation "Number of entries in use")
-  (slots nil :documentation "Vector of slots")
-  (first-free nil :documentation "First slot on the free list")
-  (last-free nil :documentation "Last slot on the free list")
-  (first-used nil :documentation "First slot on in-use list")
-  (last-used nil :documentation "Last slot on in-use list"))
+(defun tam--slot-create (table index in-use next previous &optional contents)
+  "Make a tam--slot record.
+Fields:
+  TABLE - table holding this slot
+  INDEX - index of this slot in TABLE
+  IN-USE - boolean indicating whether slot is in use or free
+  NEXT - next slot in list (free/live) containing slot, or nil if last
+  PREVIOUS - previouse slot in list (free/live) containing slot, or
+             nil if first
+  CONTENTS - object managed by slot's allocation state"
+  (record 'tam--slot table index in-use next previous contents))
 
-(cl-defstruct (tam--slot (:constructor tam--slot-create
-				       (table index in-use next previous))
-			(:copier tam--copy-slot))
-  "Slot in TAM table"
-  (table nil  :documentation "table containing this slot")
-  (index nil :documentation "index of slot in table")
-  (in-use nil :documentation "flag indicating if contents are \"live\"")
-  (next nil  :documentation "next on list of used/free")
-  (previous nil :documentation "previous on list of used/free")
-  (contents nil :documentation "contents of slot")
-  )
+(defsubst tam--slot-table (slot)
+  "Return table of SLOT."
+  (aref slot 1))
+(defsubst tam--slot-size-set (slot tbl)
+  "Set table field of SLOT to TBL."
+  (aset slot 1 tbl))
+(defsubst tam--slot-index (slot)
+  "Return index field of SLOT."
+  (aref slot 2))
+(defsubst tam--slot-index-set (slot index)
+  "Set index field of SLOT to INDEX."
+  (aset slot 2 index))
 
-(cl-defstruct (tam--pool (:constructor tam--pool-create
-				       (table
-					objs
-					allocate
-					reset))
-			 (:copier tam--copy-pool))
-  "Pool of manually managed pre-allocated objects"
-  (table nil :documentation "TAM table for tracking live/free objects")
-  (objs nil :documentation "Preallocated objects")
-  (allocate nil :documentation "Thunk for allocating uninitialized objects")
-  (reset nil :documentation "Function to reset object to uninitialized state"))
+(defsubst tam--slot-in-use (slot)
+  "Return in-use field of SLOT."
+  (aref slot 3))
+(defsubst tam--slot-in-use-set (slot in-use)
+  "Set in-use field of SLOT to IN-USE."
+  (aset slot 3 in-use))
+
+(defsubst tam--slot-next (slot)
+  "Return next field of SLOT."
+  (aref slot 4))
+(defsubst tam--slot-next-set (slot next)
+  "Set next field of SLOT to NEXT."
+  (aset slot 4 next))
+
+(defsubst tam--slot-previous (slot)
+  "Return previous field of SLOT."
+  (aref slot 5))
+(defsubst tam--slot-previous-set (slot previous)
+  "Set previous field of SLOT to PREVIOUS."
+  (aset slot 5 previous))
+
+(defsubst tam--slot-contents (slot)
+  "Return contents field of SLOT."
+  (aref slot 6))
+(defsubst tam--slot-contents-set (slot contents)
+  "Set contents field of SLOT to CONTENTS."
+  (aset slot 6 contents))
+
+(defun tam--table-create (&optional size
+				    used
+				    slots
+				    first-free
+				    last-free
+				    first-used
+				    last-used)
+  "Make a tam--table record of size N.
+Fields:
+  SIZE - number of slots in table
+  USED - number of slots in use
+  SLOTS - vector of SIZE slot objects
+  FIRST-FREE - first slot on free list, or nil if empty
+  LAST-FREE - last slot on free-list, or nil if empty
+  FIRST-USED - first slot on live list, or nil if empty
+  LAST-USED - last slot on live list, or nil if empty"
+  (record 'tam--table
+	  size used slots
+	  first-free last-free
+	  first-used last-used))
+
+(defun tam--pool-create (&optional size
+				   used
+				   slots
+				   first-free
+				   last-free
+				   first-used
+				   last-used
+				   allocate
+				   reset)
+  "Make a tam--pool record of size N.
+A tam--pool is used to manage a set of N pre-allocated object
+of some type.
+Fields:
+  SIZE - number of slots in table
+  USED - number of slots in use
+  SLOTS - vector of SIZE slot objects
+  FIRST-FREE - first slot on free list, or nil if empty
+  LAST-FREE - last slot on free-list, or nil if empty
+  FIRST-USED - first slot on live list, or nil if empty
+  LAST-USED - last slot on live list, or nil if empty
+  ALLOCATE - thunk that allocates an uninitialized object
+  RESET - function of one argument that resets an object to
+          an uninitialized state"
+  (record 'tam--pool
+	  size used slots
+	  first-free last-free
+	  first-used last-used
+	  allocate reset))
 
 
-(defun tam-create-table (N)
-  "Make a tam table of size N."
-  (let ((tbl (tam--table-create N))
-	(v (make-vector N nil))
+(defsubst tam--table-size (tbl)
+  "Return size of TBL."
+  (aref tbl 1))
+(defsubst tam--table-size-set (tbl size)
+  "Set size field of TBL to SIZE."
+  (aset tbl 1 size))
+(defsubst tam--table-used (tbl)
+  "Return used field of TBL."
+  (aref tbl 2))
+(defsubst tam--table-used-set (tbl used)
+  "Set used field of TBL to USED."
+  (aset tbl 2 used))
+
+(defsubst tam--table-slots (tbl)
+  "Return slots field of TBL."
+  (aref tbl 3))
+(defsubst tam--table-slots-set (tbl slots)
+  "Set slots field of TBL to SLOTS."
+  (aset tbl 3 slots))
+
+(defsubst tam--table-first-free (tbl)
+  "Return first-free field of TBL."
+  (aref tbl 4))
+(defsubst tam--table-first-free-set (tbl first-free)
+  "Set first-free field of TBL to FIRST-FREE."
+  (aset tbl 4 first-free))
+
+(defsubst tam--table-last-free (tbl)
+  "Return last-free field of TBL."
+  (aref tbl 5))
+(defsubst tam--table-last-free-set (tbl last-free)
+  "Set last-free field of TBL to LAST-FREE."
+  (aset tbl 5 last-free))
+
+(defsubst tam--table-first-used (tbl)
+  "Return first-used field of TBL."
+  (aref tbl 6))
+(defsubst tam--table-first-used-set (tbl first-used)
+  "Set first-used field of TBL to FIRST-USED."
+  (aset tbl 6 first-used))
+
+(defsubst tam--table-last-used (tbl)
+  "Return last-used field of TBL."
+  (aref tbl 7))
+(defsubst tam--table-last-used-set (tbl last-used)
+  "Set last-used field of TBL to LAST-USED."
+  (aset tbl 7 last-used))
+
+(defsubst tam--pool-table (pool)
+  "Return the tam--table record for POOL."
+  pool)
+
+(defsubst tam--pool-allocate (pool)
+  "Return the allocate field of POOL."
+  (aref pool 8))
+(defsubst tam--pool-allocate-set (pool allocate)
+  "Set the allocate field of POOL to ALLOCATE."
+  (aset pool 8 allocate))
+
+(defsubst tam--pool-reset (pool)
+  "Return the reset field of POOL."
+  (aref pool 9))
+(defsubst tam--pool-reset-set (pool reset)
+  "Set the reset field of POOL to RESET."
+  (aset pool 9 reset))
+
+
+(defun tam--table-initialize (tbl N &optional allocate)
+  "Initialize a tam--table or tam--pool record of size N."
+  (unless allocate
+    (setq allocate (lambda () nil)))
+  (tam--table-size-set tbl N)
+  (tam--table-used-set tbl 0)
+  (tam--table-first-used-set tbl nil)
+  (tam--table-last-used-set tbl nil)
+  (let ((v (make-vector N nil))
 	(N-1 (- N 1))
 	next
 	prev)
-    (setf (tam--table-slots tbl) v)
-    (setf (tam--table-used tbl) 0)
-    (setf (tam--table-first-used tbl) nil)
-    (setf (tam--table-last-used tbl) nil)
     (dotimes (k N)
-      (let ((s (tam--slot-create tbl k nil nil prev)))
+      (let ((s (tam--slot-create tbl k nil nil prev (funcall allocate))))
 	(aset v k s)
 	(setq prev s)))
     (when (> N 1)
       (setq next (aref v 1))
       (dotimes (k N-1)
 	(setq next (aref v (1+ k)))
-	(setf (tam--slot-next (aref v k)) next)))
-    (setf (tam--table-first-free tbl) (aref v 0))
-    (setf (tam--table-last-free tbl) (aref v N-1))
-    tbl))
+	(tam--slot-next-set (aref v k) next)))
+    (tam--table-slots-set tbl v)
+    (tam--table-first-free-set tbl (aref v 0))
+    (tam--table-last-free-set tbl (aref v N-1)))
+  tbl)
 
-
-
-(defun tam-table-fullp (tbl)
-  "Test if TBL is full."
-  (<= (tam--table-size tbl) (tam--table-used tbl)))
-
-(defun tam-table-emptyp (tbl)
-  "Test if TBL is empty."
-  (= (tam--table-used tbl) 0))
-
-(defalias 'tam-table-size #'tam--table-size)
-(defalias 'tam-table-used #'tam--table-used)
-
-(defun tam--table-get-slot (tbl idx)
-  "Get slot IDX of TBL."
-  (aref (tam--table-slots tbl) idx))
-
-(defun tam-table-get (tbl idx)
-  "Get contents of slot IDX of TBL."
-  (tam--slot-contents (aref (tam--table-slots tbl) idx)))
-
-
-(defun tam-allocate (tbl obj)
-  "Allocate slot in TBL with contents OBJ.
-Return index or nil if table is full."
-  (let ((s (tam--table-first-free tbl))
-	next idx)
-    (when (not (tam-table-fullp tbl))
-      (setf (tam--slot-previous s) (tam--table-last-used tbl))
-      (if (tam-table-emptyp tbl)
-	  (setf (tam--table-first-used tbl) s)
-	(setf (tam--slot-next (tam--table-last-used tbl)) s))
-      (setf (tam--table-last-used tbl) s)
-      (setq next (tam--slot-next s))
-      (setf (tam--table-first-free tbl) next)
-      (setf (tam--slot-next s) nil)
-      (setf (tam--slot-in-use s) t)
-      (setf (tam--slot-contents s) obj)
-      (cl-incf (tam--table-used tbl))
-      (when next
-	(setf (tam--slot-previous next) nil))
-      (when (tam-table-fullp tbl)
-	(setf (tam--table-last-free tbl) nil))
-      (setq idx (tam--slot-index s)))
-    idx))
-
-(defun tam-free (tbl idx)
-  "Free slot at IDX in TBL.
-Return contents of slot IDX.  Signals an error if IDX is not in use."
-  (let ((s (tam--table-get-slot tbl idx))
-	(last-free (tam--table-last-free tbl))
-	prev next obj)
-    (unless (tam--slot-in-use s)
-      (signal 'tam-already-free
-	      (format "Attempt to free unused table entry %s"
-		      idx)))
-    (setq prev (tam--slot-previous s))
-    (setq next (tam--slot-next s))
-    (setq obj (tam--slot-contents s))
-    (setf (tam--slot-next s) nil)
-    (if prev
-	(setf (tam--slot-next prev) next)
-      ;; else was first used
-      (setf (tam--table-first-used tbl) next))
-    (if next
-	(setf (tam--slot-previous next) prev)
-      ;; else was last used
-      (setf (tam--table-last-used tbl) prev))
-    (if last-free
-	(progn
-	  (setf (tam--slot-next last-free) s)
-	  (setf (tam--slot-previous s) last-free))
-      ;; free list is empty
-      (setf (tam--table-first-free tbl) s)
-      (setf (tam--slot-previous s) nil))
-    (setf (tam--table-last-free tbl) s)
-    (setf (tam--slot-in-use s) nil)
-    (setf (tam--slot-contents s) nil)
-    (cl-decf (tam--table-used tbl))
-    obj))
-
-(defun tam-table-free-list (tbl)
-  "Return list of free indices in TBL."
-  (cl-loop for s = (tam--table-first-free tbl) then (tam--slot-next s)
-	   while s
-	   collect (tam--slot-index s)))
-
-(defun tam-table-live-list (tbl)
-  "Return list of live indices in TBL."
-  (cl-loop for s = (tam--table-first-used tbl) then (tam--slot-next s)
-	   while s
-	   collect (tam--slot-index s)))
-
+(defun tam-create-table (N)
+  "Create a tam table of size N"
+  (tam--table-initialize (tam--table-create) N))
 
 (defun tam-create-pool (N allocate &optional reset)
   "Make a pool of N pre-allocated objects.
@@ -218,33 +263,183 @@ Arguments:
   ALLOCATE - function of zero arguments returning an uninitialized object
   RESET - function taking an object and setting it to an uninitialized state
 RESET must perform any required finalization."
-  (let ((tbl (tam-create-table N))
-	(v (make-vector N nil)))
-    (dotimes (k N)
-      (aset v k (funcall allocate)))
-    (tam--pool-create tbl v allocate reset)))
+  (let ((pool
+	 (tam--table-initialize (tam--pool-create) N allocate)))
+    (tam--pool-allocate-set pool allocate)
+    (tam--pool-reset-set pool reset)
+    pool))
 
-(defun tam-pool-get (pool idx)
-  "Get contents of slot IDX of POOL."
-  (aref (tam--pool-objs pool) idx))
+(defsubst tam-table-fullp (tbl)
+  "Test if TBL is full."
+  (<= (tam--table-size tbl) (tam--table-used tbl)))
 
-(defun tam-pool-claim (pool)
-  "Return a free object from POOL if available, nil otherwise."
-  (let ((idx (tam-allocate (tam--pool-table pool) nil))
+(defsubst tam-table-emptyp (tbl)
+  "Test if TBL is empty."
+  (= (tam--table-used tbl) 0))
+
+
+(defalias 'tam-table-size #'tam--table-size)
+(defalias 'tam-table-used #'tam--table-used)
+
+(defsubst tam-pool-fullp (pool)
+  "Test if POOL is full."
+  (tam-table-fullp pool))
+
+(defsubst tam-pool-emptyp (pool)
+  "Test if POOL is empty."
+  (tam-table-emptyp pool))
+
+(defalias 'tam-pool-size #'tam--table-size
+  "Return size of POOL.")
+(defalias 'tam-pool-used #'tam--table-used
+  "Return number of used objects in POOL.")
+
+(defsubst tam--table-get-slot (tbl idx)
+  "Get slot IDX of TBL."
+  (aref (tam--table-slots tbl) idx))
+
+(defsubst tam-table-get (tbl idx)
+  "Get contents of slot IDX of TBL."
+  (tam--slot-contents (aref (tam--table-slots tbl) idx)))
+
+(defsubst tam--allocate-slot (tbl)
+  "Return first free slot in TBL or nil if full.
+If slot is allocated, it is moved to live list."
+  (let ((s (tam--table-first-free tbl))
+	next)
+    (when (not (tam-table-fullp tbl))
+      (tam--slot-previous-set s (tam--table-last-used tbl))
+      (if (tam-table-emptyp tbl)
+	  (tam--table-first-used-set tbl s)
+	(tam--slot-next-set (tam--table-last-used tbl) s))
+      (tam--table-last-used-set tbl s)
+      (setq next (tam--slot-next s))
+      (tam--table-first-free-set tbl next)
+      (tam--slot-next-set s nil)
+      (tam--slot-in-use-set s t)
+      (tam--table-used-set tbl
+			   (1+ (tam--table-used tbl)))
+      (when next
+	(tam--slot-previous-set next nil))
+      (when (tam-table-fullp tbl)
+	(tam--table-last-free-set tbl nil)))
+    s))
+
+(defsubst tam-allocate/inline (tbl obj)
+  "Allocate slot in TBL with contents OBJ.
+Return index or nil if table is full.
+Inlining version"
+  (let ((s (tam--allocate-slot tbl))
+	idx)
+    (when s
+      (tam--slot-contents-set s obj)
+      (setq idx (tam--slot-index s)))
+    idx))
+
+(defun tam-allocate (tbl obj)
+  "Allocate slot in TBL with contents OBJ.
+Return index or nil if table is full."
+  (tam-allocate/inline tbl obj))
+
+(defsubst tam--free-slot (tbl s)
+  "Free slot S in TBL.
+Signals an error if S is not in use.
+Moves S from live list to end of free list otherwise."
+  (let ((last-free (tam--table-last-free tbl))
+	(idx (tam--slot-index s))
+	prev next)
+    (unless (tam--slot-in-use s)
+      (signal 'tam-already-free
+	      (format "Attempt to free unused table entry %s"
+		      idx)))
+    (setq prev (tam--slot-previous s))
+    (setq next (tam--slot-next s))
+    (tam--slot-next-set s nil)
+    (if prev
+	(tam--slot-next-set prev next)
+      ;; else was first used
+      (tam--table-first-used-set tbl next))
+    (if next
+	(tam--slot-previous-set next prev)
+      ;; else was last used
+      (tam--table-last-used-set tbl prev))
+    (if last-free
+	(progn
+	  (tam--slot-next-set last-free s)
+	  (tam--slot-previous-set s last-free))
+      ;; free list is empty
+      (tam--table-first-free-set tbl s)
+      (tam--slot-previous-set s nil))
+    (tam--table-last-free-set tbl s)
+    (tam--slot-in-use-set s nil)
+    (tam--table-used-set tbl
+			 (1- (tam--table-used tbl))))
+  s)
+
+(defsubst tam-free/inline (tbl idx)
+  "Free slot at IDX in TBL.
+Return contents of slot IDX.  Signals an error if IDX is not in use.
+Inlined version"
+  (let ((s (tam--free-slot tbl (tam--table-get-slot tbl idx)))
 	obj)
-    (when idx
-      (setq obj (aref (tam--pool-objs pool) idx)))
+    (setq obj (tam--slot-contents s))
+    (tam--slot-contents-set s nil)
     obj))
 
-(defun tam-pool-free (pool idx)
-  "Free object IDX of POOL."
-  (let ((obj (aref (tam--pool-objs pool) idx))
+(defun tam-free (tbl idx)
+  "Free slot at IDX in TBL.
+Return contents of slot IDX.  Signals an error if IDX is not in use."
+  (tam-free/inline tbl idx))
+
+(defun tam--slot-list (s)
+  "Return list of slots with s at head"
+  (let (hd tl)
+    (when s
+      (setq hd (cons (tam--slot-index s) nil))
+      (setq tl hd)
+      (while (setq s (tam--slot-next s))
+	(setcdr tl (cons (tam--slot-index s) nil))
+	(setq tl (cdr tl))))
+    hd))
+
+(defun tam-table-free-list (tbl)
+  "Return list of free indices in TBL."
+  (tam--slot-list (tam--table-first-free tbl)))
+
+(defun tam-table-live-list (tbl)
+  "Return list of live indices in TBL."
+  (tam--slot-list (tam--table-first-used tbl)))
+
+
+
+
+(defsubst tam-claim/inline (pool)
+  "Return index of a free object from POOL if available, nil otherwise.
+Moves object to live list.
+Inlined version"
+  (let ((s (tam--allocate-slot pool))
+	idx)
+    (when s
+      (setq idx (tam--slot-index s)))
+    idx))
+
+(defun tam-claim (pool)
+  "Return index of a free object from POOL if available, nil otherwise.
+Moves object to live list."
+  (tam-claim/inline pool))
+
+(defsubst tam-release/inline (pool idx)
+  "Release object at index IDX of POOL."
+  (let ((s (tam-pool-get pool idx))
 	(reset (tam--pool-reset pool)))
-    (tam-free (tam--pool-table pool) idx)
+    (tam--free-slot pool s)
     (when reset
-      (funcall reset obj))
+      (funcall reset (tam--slot-contents s)))
     nil))
 
+(defun tam-release (pool idx)
+  "Release object at index IDX of POOL."
+  (tam-release/inline pool idx))
 
 (provide 'tam)
 ;;; tam.el ends here
